@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chat with Grok</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+
+        .voice-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .record-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 20px;
+            font-size: 1.2em;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .record-btn:hover {
+            background: #c0392b;
+            transform: scale(1.1);
+        }
+
+        .record-btn.recording {
+            background: #27ae60;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .transcript {
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            min-height: 50px;
+        }
+
+        .transcript h4 {
+            color: #666;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+
+        .transcript p {
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .audio-player {
+            margin-top: 15px;
+        }
+
+        .audio-player audio {
+            width: 100%;
+        }
+
+        .podcast-section {
+            background: #f9f9f9;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .podcast-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+
+        .form-group input[type="file"] {
+            padding: 5px;
+        }
+
+        .btn-upload {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            width: 100%;
+            transition: background 0.3s;
+        }
+
+        .btn-upload:hover {
+            background: #5568d3;
+        }
+
+        .btn-upload:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .podcast-info {
+            background: #e8f5e9;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+
+        .podcast-info strong {
+            color: #388e3c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Podcast Interruption Chat</h1>
+        <p class="subtitle">Powered by X AI • AssemblyAI • Grok Voice</p>
+
+        <div class="podcast-section">
+            <h3>📻 Upload Podcast</h3>
+            <form id="podcastForm">
+                <div class="form-group">
+                    <label for="speakerName">Speaker Name (e.g., "Joe Rogan"):</label>
+                    <input type="text" id="speakerName" name="speaker_name" placeholder="Joe Rogan" required>
+                </div>
+                <div class="form-group">
+                    <label for="podcastUrl">Or Paste Podcast URL (YouTube, RSS, direct audio):</label>
+                    <input type="url" id="podcastUrl" name="podcast_url" placeholder="https://youtube.com/watch?v=... or https://podcast.com/episode.mp3">
+                </div>
+                <div class="form-group">
+                    <label for="podcastFile">Or Upload Audio File:</label>
+                    <input type="file" id="podcastFile" name="podcast" accept="audio/*">
+                </div>
+                <button type="submit" class="btn-upload" id="uploadBtn">Process & Transcribe</button>
+            </form>
+            <div id="podcastInfo" class="podcast-info" style="display: none;"></div>
+        </div>
+
+        <div class="voice-controls">
+            <button id="recordBtn" class="record-btn">🎤</button>
+            <div id="status" class="status info" style="display: none;"></div>
+            
+            <div id="transcript" class="transcript" style="display: none;">
+                <h4>Your Message:</h4>
+                <p id="userText"></p>
+            </div>
+
+            <div id="response" class="transcript" style="display: none;">
+                <h4>Grok's Response:</h4>
+                <p id="grokText"></p>
+                <div class="audio-player">
+                    <audio id="audioPlayer" controls></audio>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let currentPodcastId = null;
+
+        const recordBtn = document.getElementById('recordBtn');
+        const statusDiv = document.getElementById('status');
+        const transcriptDiv = document.getElementById('transcript');
+        const responseDiv = document.getElementById('response');
+        const userText = document.getElementById('userText');
+        const grokText = document.getElementById('grokText');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const podcastForm = document.getElementById('podcastForm');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const podcastInfo = document.getElementById('podcastInfo');
+
+        function showStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+        }
+
+        function hideStatus() {
+            statusDiv.style.display = 'none';
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    await processAudio(audioBlob);
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.classList.add('recording');
+                recordBtn.textContent = '⏹️';
+                showStatus('Recording... Speak now!', 'info');
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                showStatus('Error accessing microphone. Please allow microphone access.', 'error');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.classList.remove('recording');
+                recordBtn.textContent = '🎤';
+                showStatus('Processing...', 'info');
+            }
+        }
+
+        async function processAudio(audioBlob) {
+            try {
+                // Send audio to server for transcription
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.wav');
+
+                const transcribeResponse = await fetch('/api/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!transcribeResponse.ok) {
+                    throw new Error('Transcription failed');
+                }
+
+                const transcribeData = await transcribeResponse.json();
+                const userMessage = transcribeData.text;
+
+                // Show user transcript
+                userText.textContent = userMessage;
+                transcriptDiv.style.display = 'block';
+
+                showStatus('Getting response from Grok...', 'info');
+
+                // Send to Grok and get audio response
+                const chatResponse = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        text: userMessage,
+                        podcast_id: currentPodcastId
+                    })
+                });
+
+                if (!chatResponse.ok) {
+                    const errorData = await chatResponse.json().catch(() => ({ error: 'Unknown error' }));
+                    throw new Error(errorData.error || 'Chat request failed');
+                }
+
+                const chatData = await chatResponse.json();
+                const grokMessage = chatData.text;
+                const audioBase64 = chatData.audio;
+
+                if (!audioBase64) {
+                    throw new Error('No audio data received');
+                }
+
+                // Show Grok response immediately
+                grokText.textContent = grokMessage;
+                responseDiv.style.display = 'block';
+                showStatus('🎵 Preparing audio response...', 'info');
+
+                // Create audio blob and play IMMEDIATELY
+                const responseAudioBlob = new Blob([
+                    Uint8Array.from(atob(audioBase64), c => c.charCodeAt(0))
+                ], { type: 'audio/mp3' });
+                const audioUrl = URL.createObjectURL(responseAudioBlob);
+                
+                // Set audio source and auto-play immediately
+                audioPlayer.src = audioUrl;
+                audioPlayer.preload = 'auto';
+                
+                // Auto-play as soon as audio is ready
+                const playAudio = async () => {
+                    try {
+                        // Wait for audio to be ready
+                        await new Promise((resolve) => {
+                            if (audioPlayer.readyState >= 2) {
+                                resolve();
+                            } else {
+                                audioPlayer.addEventListener('canplay', resolve, { once: true });
+                                // Timeout after 2 seconds
+                                setTimeout(resolve, 2000);
+                            }
+                        });
+                        
+                        // Play the audio
+                        await audioPlayer.play();
+                        console.log('✅ Audio playing automatically');
+                        showStatus('🎵 Playing response...', 'success');
+                        
+                        // Clean up object URL after playback ends
+                        audioPlayer.addEventListener('ended', () => {
+                            URL.revokeObjectURL(audioUrl);
+                            showStatus('✅ Response complete!', 'success');
+                            setTimeout(() => hideStatus(), 2000);
+                        }, { once: true });
+                        
+                    } catch (error) {
+                        console.warn('Auto-play prevented:', error);
+                        showStatus('🔊 Click play button to hear response', 'info');
+                        audioPlayer.controls = true;
+                    }
+                };
+                
+                // Start playing immediately
+                playAudio();
+
+            } catch (error) {
+                console.error('Error processing audio:', error);
+                showStatus('Error: ' + error.message, 'error');
+            }
+        }
+
+        recordBtn.addEventListener('click', () => {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
+
+        // Handle podcast upload
+        podcastForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(podcastForm);
+            const speakerName = formData.get('speaker_name');
+            const podcastUrl = formData.get('podcast_url');
+            const podcastFile = formData.get('podcast');
+            
+            // Validate that either URL or file is provided
+            if (!podcastUrl && !podcastFile) {
+                showStatus('Please provide either a URL or upload a file', 'error');
+                return;
+            }
+            
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = podcastUrl ? 'Downloading & Transcribing...' : 'Uploading & Transcribing...';
+            showStatus(podcastUrl ? 'Downloading from URL and transcribing with AssemblyAI...' : 'Uploading podcast and transcribing with AssemblyAI...', 'info');
+            
+            try {
+                const response = await fetch('/api/upload-podcast', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Upload failed');
+                }
+                
+                const data = await response.json();
+                currentPodcastId = data.podcast_id;
+                
+                podcastInfo.innerHTML = `
+                    <strong>✓ Podcast Loaded:</strong> ${data.speaker_name}<br>
+                    <small>${data.transcript_preview}</small><br>
+                    <small style="color: #666;">Podcast ID: ${currentPodcastId}</small>
+                `;
+                podcastInfo.style.display = 'block';
+                
+                showStatus(`✅ Podcast transcribed! Ask questions about "${data.speaker_name}"'s podcast.`, 'success');
+                setTimeout(hideStatus, 5000);
+                
+                console.log('Podcast loaded with ID:', currentPodcastId);
+                
+            } catch (error) {
+                console.error('Upload error:', error);
+                showStatus('Error: ' + error.message, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload & Transcribe';
+            }
+        });
+    </script>
+</body>
+</html>
+

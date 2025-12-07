@@ -1,0 +1,14 @@
+Flask>=3.0.0
+requests>=2.31.0
+SpeechRecognition>=3.10.0
+python-dotenv>=1.0.0
+werkzeug>=3.0.0
+yt-dlp>=2023.12.30
+assemblyai>=0.28.0
+pydub>=0.25.1
+# pyaudio>=0.2.11  # Optional - only needed for CLI voice chat, not web app
+# ffmpeg is required for audio conversion - install separately:
+# macOS: brew install ffmpeg
+# Linux: sudo apt-get install ffmpeg
+# Windows: Download from https://ffmpeg.org/download.html
+
