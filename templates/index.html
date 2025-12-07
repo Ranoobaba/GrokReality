@@ -72,12 +72,13 @@
 
         .record-btn.recording {
             background: #27ae60;
-            animation: pulse 1.5s infinite;
+            animation: pulse 1s infinite;
+            box-shadow: 0 0 20px rgba(39, 174, 96, 0.5);
         }
 
         @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
+            0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(39, 174, 96, 0.5); }
+            50% { transform: scale(1.05); box-shadow: 0 0 30px rgba(39, 174, 96, 0.8); }
         }
 
         .status {
@@ -206,7 +207,7 @@
 <body>
     <div class="container">
         <h1>🎤 Podcast Interruption Chat</h1>
-        <p class="subtitle">Powered by X AI • AssemblyAI • Grok Voice</p>
+        <p class="subtitle">Powered by X AI • AssemblyAI • Grok Voice<br><small style="opacity: 0.8;">Just speak naturally - auto-detects when you're done!</small></p>
 
         <div class="podcast-section">
             <h3>📻 Upload Podcast</h3>
@@ -248,8 +249,10 @@
     </div>
 
     <script>
-        let mediaRecorder;
-        let audioChunks = [];
+        let audioContext;
+        let mediaStream;
+        let audioProcessor;
+        let websocket;
         let isRecording = false;
         let currentPodcastId = null;
 
@@ -274,65 +277,180 @@
             statusDiv.style.display = 'none';
         }
 
+        // Convert Float32 audio samples to Int16 PCM
+        function floatTo16BitPCM(float32Array) {
+            const buffer = new ArrayBuffer(float32Array.length * 2);
+            const view = new DataView(buffer);
+            for (let i = 0; i < float32Array.length; i++) {
+                let s = Math.max(-1, Math.min(1, float32Array[i]));
+                view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+            return buffer;
+        }
+
+        // Downsample audio from source rate to target rate (16kHz for AssemblyAI)
+        function downsample(buffer, inputSampleRate, outputSampleRate) {
+            if (inputSampleRate === outputSampleRate) {
+                return buffer;
+            }
+            const sampleRateRatio = inputSampleRate / outputSampleRate;
+            const newLength = Math.round(buffer.length / sampleRateRatio);
+            const result = new Float32Array(newLength);
+            let offsetResult = 0;
+            let offsetBuffer = 0;
+            while (offsetResult < result.length) {
+                const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+                let accum = 0;
+                let count = 0;
+                for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+                    accum += buffer[i];
+                    count++;
+                }
+                result[offsetResult] = accum / count;
+                offsetResult++;
+                offsetBuffer = nextOffsetBuffer;
+            }
+            return result;
+        }
+
         async function startRecording() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                audioChunks = [];
-
-                mediaRecorder.ondataavailable = (event) => {
-                    audioChunks.push(event.data);
+                // Get microphone access
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 16000,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+                
+                // Set up audio context for processing
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 16000
+                });
+                
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                const inputSampleRate = audioContext.sampleRate;
+                
+                // Create script processor for audio chunks
+                // Using 4096 buffer size for good balance of latency and performance
+                audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                // Connect WebSocket to server
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                websocket = new WebSocket(`${wsProtocol}//${window.location.host}/api/stream-transcribe`);
+                
+                websocket.onopen = () => {
+                    console.log('🎤 WebSocket connected');
                 };
-
-                mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    await processAudio(audioBlob);
-                    stream.getTracks().forEach(track => track.stop());
+                
+                websocket.onmessage = async (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'ready') {
+                        console.log('✅ Server ready for audio');
+                    } else if (data.type === 'partial') {
+                        // Show live transcription as user speaks
+                        userText.textContent = data.text + '...';
+                        transcriptDiv.style.display = 'block';
+                    } else if (data.type === 'final') {
+                        // Turn detection triggered - user stopped speaking
+                        console.log('🎯 Turn detected - final transcript:', data.text);
+                        stopRecording(false); // Don't send stop command, already have final
+                        
+                        if (data.text && data.text.trim()) {
+                            // Process the final transcript
+                            userText.textContent = data.text;
+                            transcriptDiv.style.display = 'block';
+                            await processTranscript(data.text);
+                        } else {
+                            showStatus('No speech detected. Try again.', 'error');
+                            setTimeout(hideStatus, 3000);
+                        }
+                    } else if (data.type === 'error') {
+                        console.error('❌ Server error:', data.message);
+                        showStatus('Error: ' + data.message, 'error');
+                        stopRecording(false);
+                    }
                 };
-
-                mediaRecorder.start();
+                
+                websocket.onerror = (error) => {
+                    console.error('❌ WebSocket error:', error);
+                    showStatus('Connection error. Please try again.', 'error');
+                    stopRecording(false);
+                };
+                
+                websocket.onclose = () => {
+                    console.log('🔌 WebSocket closed');
+                };
+                
+                // Process audio and send to server
+                audioProcessor.onaudioprocess = (event) => {
+                    if (!isRecording || !websocket || websocket.readyState !== WebSocket.OPEN) {
+                        return;
+                    }
+                    
+                    const inputData = event.inputBuffer.getChannelData(0);
+                    // Downsample to 16kHz if needed
+                    const downsampled = downsample(inputData, inputSampleRate, 16000);
+                    // Convert to 16-bit PCM
+                    const pcmData = floatTo16BitPCM(downsampled);
+                    
+                    // Send audio chunk to server
+                    websocket.send(pcmData);
+                };
+                
+                // Connect audio nodes
+                source.connect(audioProcessor);
+                audioProcessor.connect(audioContext.destination);
+                
                 isRecording = true;
                 recordBtn.classList.add('recording');
-                recordBtn.textContent = '⏹️';
-                showStatus('Recording... Speak now!', 'info');
+                recordBtn.textContent = '🎤';
+                showStatus('🎤 Listening... (auto-stops when you pause)', 'info');
+                
             } catch (error) {
                 console.error('Error accessing microphone:', error);
                 showStatus('Error accessing microphone. Please allow microphone access.', 'error');
             }
         }
 
-        function stopRecording() {
-            if (mediaRecorder && isRecording) {
-                mediaRecorder.stop();
-                isRecording = false;
-                recordBtn.classList.remove('recording');
-                recordBtn.textContent = '🎤';
-                showStatus('Processing...', 'info');
+        function stopRecording(sendStopCommand = true) {
+            if (!isRecording) return;
+            
+            isRecording = false;
+            recordBtn.classList.remove('recording');
+            recordBtn.textContent = '🎤';
+            
+            // Clean up audio processing
+            if (audioProcessor) {
+                audioProcessor.disconnect();
+                audioProcessor = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            
+            // Close WebSocket
+            if (websocket) {
+                if (sendStopCommand && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({ type: 'stop' }));
+                }
+                websocket.close();
+                websocket = null;
             }
         }
 
-        async function processAudio(audioBlob) {
+        async function processTranscript(userMessage) {
             try {
-                // Send audio to server for transcription
-                const formData = new FormData();
-                formData.append('audio', audioBlob, 'recording.wav');
-
-                const transcribeResponse = await fetch('/api/transcribe', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!transcribeResponse.ok) {
-                    throw new Error('Transcription failed');
-                }
-
-                const transcribeData = await transcribeResponse.json();
-                const userMessage = transcribeData.text;
-
-                // Show user transcript
-                userText.textContent = userMessage;
-                transcriptDiv.style.display = 'block';
-
                 showStatus('Getting response from Grok...', 'info');
 
                 // Send to Grok and get audio response
@@ -397,8 +515,8 @@
                         // Clean up object URL after playback ends
                         audioPlayer.addEventListener('ended', () => {
                             URL.revokeObjectURL(audioUrl);
-                            showStatus('✅ Response complete!', 'success');
-                            setTimeout(() => hideStatus(), 2000);
+                            showStatus('✅ Response complete! Click 🎤 to ask another question.', 'success');
+                            setTimeout(() => hideStatus(), 3000);
                         }, { once: true });
                         
                     } catch (error) {
@@ -412,7 +530,7 @@
                 playAudio();
 
             } catch (error) {
-                console.error('Error processing audio:', error);
+                console.error('Error processing transcript:', error);
                 showStatus('Error: ' + error.message, 'error');
             }
         }
@@ -421,7 +539,9 @@
             if (!isRecording) {
                 startRecording();
             } else {
-                stopRecording();
+                // Manual stop - will wait for any pending final transcript
+                stopRecording(true);
+                showStatus('Processing...', 'info');
             }
         });
 

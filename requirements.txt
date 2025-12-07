@@ -1,14 +1,32 @@
-Flask>=3.0.0
+# FastAPI and ASGI server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Pydantic for data validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# HTTP requests
 requests>=2.31.0
+httpx>=0.26.0
+
+# Speech recognition
 SpeechRecognition>=3.10.0
+
+# Environment variables
 python-dotenv>=1.0.0
-werkzeug>=3.0.0
+
+# Audio/Video processing
 yt-dlp>=2023.12.30
 assemblyai>=0.28.0
 pydub>=0.25.1
+
+# Template rendering
+jinja2>=3.1.2
+
 # pyaudio>=0.2.11  # Optional - only needed for CLI voice chat, not web app
 # ffmpeg is required for audio conversion - install separately:
 # macOS: brew install ffmpeg
 # Linux: sudo apt-get install ffmpeg
 # Windows: Download from https://ffmpeg.org/download.html
-
